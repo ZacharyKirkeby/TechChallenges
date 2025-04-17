@@ -1,115 +1,202 @@
-import xgboost as xgb
-import matplotlib.pyplot as plt
-import numpy as np
-import signal
-import sys
+import requests
+import logging
+import base64
+import time
 import random
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score
+import os
+import numpy as np
+from collections import Counter
+from scipy.stats import entropy, skew, kurtosis
+from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
+import argparse
 
-# Initial model and data
-model = xgb.XGBClassifier(use_label_encoder=False, eval_metric='mlogloss')
-X = []
-y = []
-scaler = StandardScaler()
+logging.basicConfig(level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Metrics for graphing
-streaks = []
-accuracies = []
-confidences = []
-current_streak = 0
-total_correct = 0
-attempts = 0
+class Server(object):
+    url = 'https://mlb.praetorian.com'
+    log = logging.getLogger(__name__)
 
-def extract_features(bytez):
-    arr = [int(bytez[i:i+2], 16) for i in range(0, len(bytez), 2)]
-    byte_counts = [0]*256
-    for b in arr:
-        byte_counts[b] += 1
-    entropy = -sum((c/len(arr))*np.log2(c/len(arr)) for c in byte_counts if c > 0)
-    avg = sum(arr) / len(arr)
-    unique_bytes = len(set(arr))
-    return byte_counts + [entropy, avg, unique_bytes]
+    def __init__(self):
+        self.session = requests.session()
+        self.binary  = None
+        self.hash    = None
+        self.wins    = 0
+        self.targets = []
 
-def plot_graph_and_exit():
-    print("\nInterrupted. Plotting learning progression...")
-    if not streaks:
-        print("No data to plot.")
-        sys.exit(0)
+    def _request(self, route, method='get', data=None):
+        while True:
+            try:
+                if method == 'get':
+                    r = self.session.get(self.url + route)
+                else:
+                    r = self.session.post(self.url + route, data=data)
+                if r.status_code == 429:
+                    raise Exception('Rate Limit Exception')
+                if r.status_code == 500:
+                    raise Exception('Unknown Server Exception')
+                return r.json()
+            except Exception as e:
+                self.log.error(e)
+                self.log.info('Waiting 60 seconds before next request')
+                time.sleep(60)
 
-    fig, ax1 = plt.subplots()
+    def get(self):
+        r = self._request("/challenge")
+        self.targets = r.get('target', [])
+        self.binary  = base64.b64decode(r.get('binary', ''))
+        return r
 
-    ax1.set_xlabel('Streak #')
-    ax1.set_ylabel('Accuracy', color='tab:blue')
-    ax1.plot(range(len(streaks)), accuracies, color='tab:blue', label='Accuracy')
-    ax1.tick_params(axis='y', labelcolor='tab:blue')
-    ax1.set_ylim([0, 1.05])
+    def post(self, target):
+        r = self._request("/solve", method="post", data={"target": target})
+        self.wins = r.get('correct', 0)
+        self.hash = r.get('hash', self.hash)
+        self.ans  = r.get('target', 'unknown')
+        return r
 
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Confidence', color='tab:red')
-    ax2.plot(range(len(streaks)), confidences, color='tab:red', label='Confidence')
-    ax2.tick_params(axis='y', labelcolor='tab:red')
-    ax2.set_ylim([0, 1.05])
+def extract_endianness_features(hex_bytes):
+    big_score = 0
+    little_score = 0
 
-    plt.title("Model Progression Over Streaks")
-    fig.tight_layout()
-    plt.show()
-    sys.exit(0)
+    for i in range(0, len(hex_bytes) - 4, 4):
+        word = bytes(hex_bytes[i:i+4])  # Convert slice to bytes
 
-# Bind Ctrl-C (SIGINT) to graceful exit
-signal.signal(signal.SIGINT, lambda sig, frame: plot_graph_and_exit())
+        # Big-endian opcode patterns
+        if word[0] in {0x00, 0x3C, 0x8F, 0x27, 0xAF}:
+            big_score += 1
+        if word[3] in {0x00, 0x3C, 0x8F, 0x27, 0xAF}:
+            little_score += 1
+        if word[:2] == b'\x00\x08':
+            big_score += 0.5
+        if word[2:] == b'\x08\x00':
+            little_score += 0.5
 
-def update_model():
-    if len(set(y)) > 1:  # Need at least two classes
-        X_scaled = scaler.fit_transform(X)
-        model.fit(X_scaled, y)
+    total = big_score + little_score + 1e-6
+    big_ratio = big_score / total
+    little_ratio = little_score / total
+    return [big_score, little_score, big_ratio, little_ratio]
 
-def classify_sample(hexstr):
-    global current_streak, total_correct, attempts
+def extract_features(data: bytes):
+    hex_bytes = np.frombuffer(data, dtype=np.uint8)
+    total = len(hex_bytes)
 
-    features = extract_features(hexstr)
-    if len(set(y)) > 1:
-        X_scaled = scaler.transform([features])
-        pred_proba = model.predict_proba(X_scaled)[0]
-        guess = np.argmax(pred_proba)
-        confidence = np.max(pred_proba)
-    else:
-        guess = random.randint(0, 9)
-        confidence = 0.1
+    freq = np.bincount(hex_bytes, minlength=256)[:16]
+    freq = freq / total
 
-    return guess, confidence
+    probs = freq[freq > 0]
+    ent = entropy(probs)
 
-# Example function to simulate guesses
-def submit(hexstr, actual_arch):
-    global current_streak, total_correct, attempts
+    bigrams = Counter()
+    for i in range(len(hex_bytes) - 1):
+        bigrams[(hex_bytes[i], hex_bytes[i + 1])] += 1
+    top_bigrams = bigrams.most_common(10)
+    bigram_features = [count / total for (_, count) in top_bigrams]
+    bigram_features += [0] * (10 - len(bigram_features))
 
-    guess, conf = classify_sample(hexstr)
-    is_correct = guess == actual_arch
-    attempts += 1
+    mean_val = np.mean(hex_bytes)
+    var_val = np.var(hex_bytes)
+    skew_val = skew(hex_bytes)
+    kurt_val = kurtosis(hex_bytes)
 
-    if is_correct:
-        current_streak += 1
-        total_correct += 1
-    else:
-        current_streak = 0
+    byte_presence = (np.bincount(hex_bytes, minlength=256) > 0).astype(int)[:256]
 
-    confidences.append(conf)
-    accuracies.append(total_correct / attempts)
-    streaks.append(current_streak)
+    opcode_map = {
+        'x86_call': 0xE8,
+        'x86_jmp':  0xE9,
+        'x86_misc': 0xFF,
+        'mips_lui': 0x3C,
+        'mips_lw':  0x8C,
+        'arm_b':    0xEA,
+    }
+    opcode_counts = []
+    for code in opcode_map.values():
+        count = np.sum(hex_bytes == code)
+        opcode_counts.append(count / total)
 
-    print(f"Guess: {guess} (conf: {conf:.2f}) | Actual: {actual_arch} | {'✔️' if is_correct else '❌'} | Streak: {current_streak}")
+    endian_feats = extract_endianness_features(hex_bytes)
 
-    # Add to training set and retrain
-    X.append(extract_features(hexstr))
-    y.append(actual_arch)
-    update_model()
+    return (
+        list(freq)
+        + [ent]
+        + bigram_features
+        + [mean_val, var_val, skew_val, kurt_val]
+        + list(byte_presence)
+        + opcode_counts
+        + endian_feats
+    )
 
-# Dummy run (simulate interaction)
+def save_data(X, y, path='data.npz'):
+    np.savez_compressed(path, X=np.array(X), y=np.array(y))
+
+def load_data(path='data.npz'):
+    if os.path.exists(path):
+        data = np.load(path, allow_pickle=True)
+        return data['X'].tolist(), data['y'].tolist()
+    return [], []
+
 if __name__ == "__main__":
-    arch_choices = list(range(10))  # Simulate 10 architectures
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-cache", action="store_true", help="Ignore saved dataset and start from scratch")
+    parser.add_argument("--save", action="store_true", help="Save training data after each sample")
+    args = parser.parse_args()
 
-    while True:
-        fake_hex = ''.join(random.choices('0123456789abcdef', k=64))
-        correct_arch = random.choice(arch_choices)
-        submit(fake_hex, correct_arch)
+    s = Server()
+    clf = XGBClassifier(
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        use_label_encoder=False,
+        eval_metric='mlogloss',
+        verbosity=0
+    )
+    label_encoder = LabelEncoder()
+
+    if args.no_cache:
+        X, y = [], []
+        logging.info("Starting with empty dataset.")
+    else:
+        X, y = load_data()
+        logging.info(f"Loaded dataset with {len(y)} samples.")
+
+    streak = 0
+
+CONFIDENCE_THRESHOLD = 0.7
+
+for i in range(100000):
+    s.get()
+    features = extract_features(s.binary)
+
+    if len(y) >= 10:
+        label_encoder.fit(y)
+        clf.fit(X, label_encoder.transform(y))
+        probs = clf.predict_proba([features])[0]
+        label_to_index = {label: i for i, label in enumerate(label_encoder.classes_)}
+        valid_probs = [(target, probs[label_to_index[target]]) for target in s.targets if target in label_to_index]
+        target, confidence = (max(valid_probs, key=lambda x: x[1]) if valid_probs
+                              else (random.choice(s.targets), 0.0))
+    else:
+        target = random.choice(s.targets)
+        confidence = 0.0
+
+    s.post(target)
+    correct = (target == s.ans)
+    streak = streak + 1 if correct else 0
+
+    logging.info("Guess:[{: >9}]   Answer:[{: >9}]   Wins:[{: >3}]   Streak:[{: >3}]   Confidence:{:.2f}".format(
+        target, s.ans, s.wins, streak, confidence))
+
+    if not correct or confidence < CONFIDENCE_THRESHOLD:
+        X.append(features)
+        y.append(s.ans)
+        label_encoder.fit(y)
+        clf.fit(X, label_encoder.transform(y))
+        if args.save:
+            save_data(X, y)
+
+    if s.hash:
+        logging.info("You win! {}".format(s.hash))
+        break
 
