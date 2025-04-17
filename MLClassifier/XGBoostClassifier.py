@@ -150,6 +150,8 @@ if __name__ == "__main__":
         colsample_bytree=0.8,
         use_label_encoder=False,
         eval_metric='mlogloss',
+        objective='multi:softprob',
+        num_class=12,
         verbosity=0
     )
     label_encoder = LabelEncoder()
