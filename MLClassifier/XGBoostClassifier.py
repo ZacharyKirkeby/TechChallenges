@@ -143,9 +143,9 @@ if __name__ == "__main__":
 
     s = Server()
     clf = XGBClassifier(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.1,
+        n_estimators=500,
+        max_depth=8,
+        learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
         use_label_encoder=False,
@@ -165,8 +165,8 @@ if __name__ == "__main__":
 
     streak = 0
 
-CONFIDENCE_THRESHOLD = 0.7
-
+CONFIDENCE_THRESHOLD = 0.9
+early = True
 for i in range(100000):
     s.get()
     features = extract_features(s.binary)
@@ -189,8 +189,9 @@ for i in range(100000):
 
     logging.info("Guess:[{: >9}]   Answer:[{: >9}]   Wins:[{: >3}]   Streak:[{: >3}]   Confidence:{:.2f}".format(
         target, s.ans, s.wins, streak, confidence))
-
-    if not correct or confidence < CONFIDENCE_THRESHOLD:
+    if (i > 15000):
+        early = False
+    if not correct or confidence < CONFIDENCE_THRESHOLD or early:
         X.append(features)
         y.append(s.ans)
         label_encoder.fit(y)
