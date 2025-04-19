@@ -143,9 +143,9 @@ if __name__ == "__main__":
 
     s = Server()
     clf = XGBClassifier(
-        n_estimators=500,
+        n_estimators=100,
         max_depth=8,
-        learning_rate=0.05,
+        learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
         use_label_encoder=False,
