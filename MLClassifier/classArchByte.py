@@ -128,7 +128,7 @@ def extract_features(data: bytes):
 
     endian_feats = extract_endianness_features(hex_bytes)
 
-
+    vocab_size=256*256
     hex_bytes = np.frombuffer(data, dtype=np.uint8)
     total = len(hex_bytes) - 1
     ngram_counts = np.zeros(vocab_size, dtype=np.float32)
