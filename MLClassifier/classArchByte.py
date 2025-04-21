@@ -128,6 +128,20 @@ def extract_features(data: bytes):
 
     endian_feats = extract_endianness_features(hex_bytes)
 
+
+    hex_bytes = np.frombuffer(data, dtype=np.uint8)
+    total = len(hex_bytes) - 1
+    ngram_counts = np.zeros(vocab_size, dtype=np.float32)
+
+    for i in range(total):
+        idx = (hex_bytes[i] << 8) | hex_bytes[i + 1]
+        ngram_counts[idx] += 1
+
+    if total > 0:
+        ngram_counts /= total
+
+    ngrams = ngram_counts.tolist()
+
     return (
         list(freq)
         + [ent]
@@ -136,6 +150,7 @@ def extract_features(data: bytes):
         + list(byte_presence)
         + opcode_counts
         + endian_feats
+        + ngrams
     )
 
 def save_data(X, y, path='data.npz'):
