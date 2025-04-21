@@ -183,6 +183,7 @@ if __name__ == "__main__":
     streak = 0
 
 CONFIDENCE_THRESHOLD = 0.7
+PASSES = 0
 
 for i in range(100000):
     s.get()
@@ -206,9 +207,11 @@ for i in range(100000):
 
     logging.info("Guess:[{: >9}]   Answer:[{: >9}]   Wins:[{: >3}]   Streak:[{: >3}]   Confidence:{:.2f}".format(
         target, s.ans, s.wins, streak, confidence))
+    
+    PASSES = PASSES + 1
 
     # Train if incorrect OR confidence was low
-    if not correct or confidence < CONFIDENCE_THRESHOLD:
+    if not correct or confidence < CONFIDENCE_THRESHOLD or PASSES < 6000:
         X.append(features)
         y.append(s.ans)
         label_encoder.fit(y)
@@ -221,38 +224,3 @@ for i in range(100000):
         logging.info("You win! {}".format(s.hash))
         break
 
-"""
-    for i in range(100000):
-        s.get()
-        features = extract_features(s.binary)
-
-        if len(y) >= 10:
-            label_encoder.fit(y)
-            clf.fit(X, label_encoder.transform(y))
-            probs = clf.predict_proba([features])[0]
-            label_to_index = {label: for i, label in enumerate(label_encoder.classes_)}
-            valid_probs = [(target, probs[label_to_index[target]]) for target in s.targets if target in label_to_index]
-            target = max(valid_probs, key=lambda x: x[1])[0] if valid_probs else random.choice(s.targets)
-        else:
-            target = random.choice(s.targets)
-
-        s.post(target)
-        correct = (target == s.ans)
-        streak = streak + 1 if correct else 0
-
-        logging.info("Guess:[{: >9}]   Answer:[{: >9}]   Wins:[{: >3}]   Streak:[{: >3}]".format(
-            target, s.ans, s.wins, streak))
-
-        # Update dataset and retrain on-the-fly
-        X.append(features)
-        y.append(s.ans)
-        label_encoder.fit(y)
-        clf.fit(X, label_encoder.transform(y))
-
-        if args.save:
-            save_data(X, y)
-
-        if s.hash:
-            logging.info("You win! {}".format(s.hash))
-            break
-"""
