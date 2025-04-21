@@ -162,6 +162,7 @@ def load_data(path='data.npz'):
         return data['X'].tolist(), data['y'].tolist()
     return [], []
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-cache", action="store_true", help="Ignore saved dataset and start from scratch")
@@ -181,46 +182,52 @@ if __name__ == "__main__":
         logging.info(f"Loaded dataset with {len(y)} samples.")
 
     streak = 0
+    CONFIDENCE_THRESHOLD = 0.7
+    PASSES = 0
 
-CONFIDENCE_THRESHOLD = 0.7
-PASSES = 0
+    try:
+        for i in range(100000):
+            s.get()
+            features = extract_features(s.binary)
 
-for i in range(100000):
-    s.get()
-    features = extract_features(s.binary)
+            if len(y) >= 10:
+                label_encoder.fit(y)
+                clf.fit(X, label_encoder.transform(y))
+                probs = clf.predict_proba([features])[0]
+                label_to_index = {label: i for i, label in enumerate(label_encoder.classes_)}
+                valid_probs = [(target, probs[label_to_index[target]]) for target in s.targets if target in label_to_index]
+                target, confidence = (max(valid_probs, key=lambda x: x[1]) if valid_probs
+                                      else (random.choice(s.targets), 0.0))
+            else:
+                target = random.choice(s.targets)
+                confidence = 0.0
 
-    if len(y) >= 10:
-        label_encoder.fit(y)
-        clf.fit(X, label_encoder.transform(y))
-        probs = clf.predict_proba([features])[0]
-        label_to_index = {label: i for i, label in enumerate(label_encoder.classes_)}
-        valid_probs = [(target, probs[label_to_index[target]]) for target in s.targets if target in label_to_index]
-        target, confidence = (max(valid_probs, key=lambda x: x[1]) if valid_probs
-                              else (random.choice(s.targets), 0.0))
-    else:
-        target = random.choice(s.targets)
-        confidence = 0.0
+            s.post(target)
+            correct = (target == s.ans)
+            streak = streak + 1 if correct else 0
 
-    s.post(target)
-    correct = (target == s.ans)
-    streak = streak + 1 if correct else 0
+            logging.info("Guess:[{: >9}]   Answer:[{: >9}]   Wins:[{: >3}]   Streak:[{: >3}]   Confidence:{:.2f}".format(
+                target, s.ans, s.wins, streak, confidence))
 
-    logging.info("Guess:[{: >9}]   Answer:[{: >9}]   Wins:[{: >3}]   Streak:[{: >3}]   Confidence:{:.2f}".format(
-        target, s.ans, s.wins, streak, confidence))
-    
-    PASSES = PASSES + 1
+            PASSES += 1
 
-    # Train if incorrect OR confidence was low
-    if not correct or confidence < CONFIDENCE_THRESHOLD or PASSES < 6000:
-        X.append(features)
-        y.append(s.ans)
-        label_encoder.fit(y)
-        clf.fit(X, label_encoder.transform(y))
+            # Train if incorrect OR confidence was low OR not enough data yet
+            if not correct or confidence < CONFIDENCE_THRESHOLD or PASSES < 6000:
+                X.append(features)
+                y.append(s.ans)
+                label_encoder.fit(y)
+                clf.fit(X, label_encoder.transform(y))
 
-        if args.save:
-            save_data(X, y)
+                if args.save:
+                    save_data(X, y)
 
-    if s.hash:
-        logging.info("You win! {}".format(s.hash))
-        break
+            if s.hash:
+                logging.info("You win! {}".format(s.hash))
+                break
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+    finally:
+        logging.info("Saving data before exit...")
+        save_data(X, y)
+        logging.info("Done.")
 
