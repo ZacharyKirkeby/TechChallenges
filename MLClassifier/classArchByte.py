@@ -167,6 +167,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-cache", action="store_true", help="Ignore saved dataset and start from scratch")
     parser.add_argument("--save", action="store_true", help="Save training data after each sample")
+    parser.add_argument("--email", type=str, required=True, help="Email address to submit with hash")
     args = parser.parse_args()
 
     s = Server()
@@ -223,6 +224,11 @@ if __name__ == "__main__":
 
             if s.hash:
                 logging.info("You win! {}".format(s.hash))
+                try:
+                    response = s._request("/hash", method="post", data={"email": args.email})
+                    logging.info(f"Submitted hash response: {response}")
+                except Exception as e:
+                    logging.error(f"Failed to submit hash: {e}")
                 break
     except KeyboardInterrupt:
         logging.warning("Interrupted by user.")
