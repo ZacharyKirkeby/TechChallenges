@@ -1,6 +1,6 @@
 import base64
 
-def caesar_cipher(text, shift=23):
+def caesar_cipher(text, shift=3):
     result = []
     for char in text:
         if char.isalpha():

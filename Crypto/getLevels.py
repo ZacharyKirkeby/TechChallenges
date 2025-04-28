@@ -51,6 +51,7 @@ for level in range(7):
     elif level == 1:
         cipher =data['challenge']
         guess = caesar_cipher(cipher);
+        print("Level 1 guess", guess)
     else:
         print("Challenge:", data['challenge'])
         guess = input("Your guess: ")
@@ -60,5 +61,6 @@ for level in range(7):
     if 'hash' in h:
         hashes[level] = h['hash']
         print("Correct! Hash:", h['hash'])
+        with open("hashes.txt", "w") as f: f.write("\n".join(map(str, hashes)))
     else:
         print("No hash returned.")
