@@ -2,3 +2,7 @@ hashes.txt
 __pycache__
 output.png
 output2.png
+*.png
+*.jpg
+*.ppm
+*.txt
