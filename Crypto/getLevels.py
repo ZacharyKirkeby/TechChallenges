@@ -1,5 +1,6 @@
 import requests
-from solve import caesar_cipher
+import os
+from solve import caesar_cipher, decode_base64
 
 try: input = raw_input
 except NameError: pass
@@ -52,6 +53,14 @@ for level in range(7):
         cipher =data['challenge']
         guess = caesar_cipher(cipher);
         print("Level 1 guess", guess)
+    elif level == 2:
+        cipher = data['challenge']
+        if not os.path.exists('output.png'):
+            decode_base64(cipher, 'output.png')
+            guess = input("Your guess: ")
+        else:
+            guess = "PRAE2014AN"
+        print("Level 2 guess", guess)
     else:
         print("Challenge:", data['challenge'])
         guess = input("Your guess: ")
@@ -61,6 +70,7 @@ for level in range(7):
     if 'hash' in h:
         hashes[level] = h['hash']
         print("Correct! Hash:", h['hash'])
-        with open("hashes.txt", "w") as f: f.write("\n".join(map(str, hashes)))
+        with open("hashes.txt", "w") as f:
+            f.write("\n".join(hashes.values()))
     else:
         print("No hash returned.")
