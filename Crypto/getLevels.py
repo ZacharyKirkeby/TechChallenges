@@ -1,5 +1,6 @@
 import requests
-import solve
+from solve import caesar_cipher
+
 try: input = raw_input
 except NameError: pass
 
@@ -49,7 +50,7 @@ for level in range(7):
         print("Level 0 guess (freebie):", guess)
     elif level == 1:
         cipher =data['challenge']
-        guess = solve.caeser_cipher(cipher);
+        guess = caesar_cipher(cipher);
     else:
         print("Challenge:", data['challenge'])
         guess = input("Your guess: ")
