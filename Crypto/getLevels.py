@@ -55,12 +55,12 @@ for level in range(7):
         print("Level 1 guess", guess)
     elif level == 2:
         cipher = data['challenge']
-        if not os.path.exists('output.png'):
-            decode_base64(cipher, 'output.png')
-            guess = input("Your guess: ")
-        else:
-            guess = "PRAE2014AN"
+        guess = decode_base64(cipher, 'output.png')
         print("Level 2 guess", guess)
+    elif level == 3:
+        cipher = data['challenge']
+        guess = decode_base64(cipher, 'output2.png')
+        print("Level 3 guess", guess)
     else:
         print("Challenge:", data['challenge'])
         guess = input("Your guess: ")

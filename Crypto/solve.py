@@ -1,4 +1,7 @@
 import base64
+import subprocess
+import re
+import string
 
 def caesar_cipher(text, shift=3):
     result = []
@@ -19,5 +22,12 @@ def decode_base64(data_url: str, output_path: str) -> None:
     data = base64.b64decode(encoded)
     with open(output_path, 'wb') as f:
         f.write(data)
+    result = subprocess.run(["strings", output_path], check=True, capture_output=True, text=True)
+    match = re.search(r'HCKR(.*?)\n', result.stdout, re.DOTALL)
+    if not match:
+        raise ValueError("Could not find data between HCKR and IEND.")
+    extracted_string = match.group(1).strip()
+    extracted_string = extracted_string.translate(str.maketrans('', '', string.punctuation))
+    return extracted_string
 
 
